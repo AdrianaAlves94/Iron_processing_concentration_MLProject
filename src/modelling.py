@@ -1,14 +1,13 @@
 import pandas as pd
 import matplotlib.pyplot as plt
-import numpy as np
-from sklearn.tree import DecisionTreeRegressor
-from sklearn.ensemble import RandomForestRegressor
-from xgboost import XGBRegressor
-from sklearn.neighbors import KNeighborsRegressor
 from sklearn.model_selection import cross_val_score, TimeSeriesSplit, GridSearchCV
-from sklearn.metrics import r2_score, root_mean_squared_error, mean_absolute_error
+from sklearn.metrics import r2_score, mean_absolute_error
 
+#Global TimeSeriesSplit instance. 7 folds chosen for stability on ~4,000 hourly samples
 tscv = TimeSeriesSplit(n_splits=7)
+
+#Runs CV and test evaluation on multiple models and returns a ranked comparison table.
+#To identify the strongest candidates worth tuning.
 
 def compare_models(models_dict, X_train, y_train, X_test, y_test, cv):
     results = []
@@ -29,6 +28,8 @@ def compare_models(models_dict, X_train, y_train, X_test, y_test, cv):
     return pd.DataFrame(results).sort_values('Test R²', ascending=False)
 
 
+# GridSearchCV + test evaluation, returns best model.
+
 def tune_model(model, param_grid, X_train, y_train, X_test, y_test, cv):
     """GridSearchCV + test evaluation, returns best model"""
     grid_search = GridSearchCV(model, param_grid, cv=tscv, scoring='r2', n_jobs=-1)
@@ -42,11 +43,16 @@ def tune_model(model, param_grid, X_train, y_train, X_test, y_test, cv):
     return best_model
 
 
+#For tree-based models. Shows top N most important features
+#Useful for interpreting what the model learned and detecting unexpected dominance
+
 def feature_importance(model, X_train, top_n=15):
     """For tree-based models — shows top N most important features"""
     importances = pd.Series(model.feature_importances_, index=X_train.columns)
     return importances.sort_values(ascending=False).head(top_n)
 
+
+#Visual check: predicted vs actual over the test period
 
 def plot_predictions(model, X_test, y_test):
     """Visual check — predicted vs actual"""

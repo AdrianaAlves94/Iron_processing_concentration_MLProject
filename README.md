@@ -1,21 +1,22 @@
 # Predicting Iron Concentrate Quality in a Flotation Processing Plant
 
-A machine learning project that predicts the purity of iron concentrate (% iron) from real-time sensor data collected across a flotation processing plant — enabling near real-time quality monitoring without waiting for lab results.
+A machine learning project that predicts the purity of iron concentrate (% iron) from real-time sensor data collected across a flotation processing plant, enabling near real-time quality monitoring without waiting for lab results.
 
 ---
 
 ## The Problem
 
-In iron ore processing plants, concentrate quality is typically measured through physical lab sampling — a process that takes hours. By the time operators know the iron grade is off-spec, a significant amount of product has already been processed under suboptimal conditions.
+In iron ore processing plants, concentrate quality is typically measured through physical lab sampling, a process that takes hours. By the time operators know the iron grade is off-spec, a significant amount of product has already been processed under suboptimal conditions.
 
-This project asks: **can we predict iron concentrate grade continuously, using sensor data that is already being collected?**
+This project asks: **can we predict iron concentrate grade, using sensor data that is already being collected?**
 
 ---
 
 ## The Data
 
-- 6 months of hourly sensor readings from a flotation processing plant
-- 124 features after feature engineering, including:
+- 6 months of hourly sensor readings from a flotation processing plant (March–September 2017)
+- Raw data: 737,453 rows at 20-second intervals, aggregated to ~4,000 hourly samples
+- 116 features after feature engineering, including:
   - Ore feed composition (iron %, silica %)
   - Reagent flows (starch, amina)
   - Ore pulp properties (pH, density, flow)
@@ -31,6 +32,14 @@ This project asks: **can we predict iron concentrate grade continuously, using s
 ### Time-Aware Validation
 Because this is time series data, standard random train/test splitting would allow the model to train on future observations to predict the past — a form of data leakage. All splits were done **chronologically**, and `TimeSeriesSplit` (7 folds) was used for cross-validation, ensuring the model is always trained on the past and evaluated on what comes after. This mirrors real operational conditions.
 
+### Data Leakage Investigation
+An initial model including silica concentrate features produced a Test R² of 0.51. Feature importance analysis revealed that `pct_silica_concentrate_max` accounted for over 80% of the model's predictive weight. Since silica concentrate is measured on the same final product at the same time as iron concentrate, this constituted data leakage — the model was reading a complementary label rather than learning from process variables. All silica concentrate features were removed.
+
+### Target Lag Feature
+After removing leakage, model performance dropped significantly. Investigation of the raw data revealed that iron concentrate is a lab measurement updated infrequently — 94.3% of rows are identical to the previous row, and 94.7% of hourly samples contain a single unchanging value. This finding is consistent with published research: Pu et al. (2020), using the same dataset, reported a Random Forest R² of 0.014 without temporal features, compared to 0.71 with an LSTM that captures temporal dependencies.
+
+The previous hour's iron concentrate grade was added as a feature — a legitimate input since operators always have access to the last lab result. This improved model performance substantially.
+
 ### Model Selection
 Three models were compared as baselines, chosen to cover the full spectrum from simple to complex:
 
@@ -40,10 +49,8 @@ Three models were compared as baselines, chosen to cover the full spectrum from 
 | Random Forest | Bagging — committee of trees |
 | XGBoost | Boosting — learns from mistakes iteratively |
 
-Random Forest performed best at baseline (Test R²: 0.494). XGBoost was competitive (0.417 untuned) but showed more potential with tuning.
-
 ### Hyperparameter Tuning
-`GridSearchCV` with `TimeSeriesSplit` was used to tune both Random Forest and XGBoost. Key finding: XGBoost benefited most from tuning — a low learning rate (0.01), shallow trees (max_depth=3), and subsampling (0.8) transformed it from an overfit model to the best performer.
+`GridSearchCV` with `TimeSeriesSplit` was used to tune both Random Forest and XGBoost. XGBoost benefited most from tuning — a low learning rate (0.01), shallow trees (max_depth=3), and subsampling (0.8) prevented overfitting on noisy industrial data.
 
 ---
 
@@ -51,17 +58,43 @@ Random Forest performed best at baseline (Test R²: 0.494). XGBoost was competit
 
 | Model | CV R² (mean) | CV R² (std) | Test R² | Test MAE |
 |---|---|---|---|---|
-| XGBoost (tuned) | 0.610 | — | 0.511 | 0.632 |
-| Random Forest (tuned) | 0.574 | 0.125 | 0.494 | 0.639 |
-| Decision Tree | 0.508 | 0.122 | 0.355 | 0.724 |
+| XGBoost (tuned) | 0.476 | — | 0.536 | 0.563 |
+| Random Forest (tuned) | 0.477 | 0.119 | 0.525 | 0.571 |
+| Decision Tree | 0.334 | 0.150 | 0.443 | 0.612 |
 
-**Best model: XGBoost (tuned)**
-- Predicts iron concentrate grade within **±0.63 percentage points** on average
-- CV and test scores are close, confirming the model generalises well to unseen time periods
+**Best model: tuned XGBoost**
+- Predicts iron concentrate grade within **±0.56 percentage points** on average
+- CV and test scores are close, confirming the model generalises honestly to unseen time periods
 
-### Why 0.51 R²?
+### What the R² of 0.54 reflects
 
-The model has access to all key controllable process variables — reagent dosage, airflow, pH, feed grade. The remaining unexplained variance reflects the inherent physical complexity of flotation: microscopic ore heterogeneity, equipment wear, and operator decisions that no sensor fully captures. Even industrial ML systems built by process engineers typically land in the 50–65% R² range for this problem.
+The dominant predictor is the previous hour's grade (feature importance ~14% in XGBoost), which works largely because the lab measurement is frozen for hours at a time rather than because the model is capturing true process dynamics. Process variables such as pH, amina flow and airflow do contribute but modestly.
+
+This is consistent with the structural limitation of the dataset: the target is a lab measurement updated at irregular intervals, not a continuous sensor. A model predicting at hourly resolution is partly tracking lab scheduling rather than process physics.
+
+---
+
+## Key Decisions & Reasoning
+
+- **TimeSeriesSplit over random split** — prevents data leakage in time-ordered data; tested 3, 5 and 7 folds and 7 gave the most stable CV scores
+- **Silica concentrate removed** — feature importance showed it dominated at 80%+ weight; it is measured simultaneously with the target and constitutes circular leakage
+- **Target lag added** — previous hour's iron grade is legitimately available to operators and captures the strong temporal autocorrelation (lag-1 = 0.75)
+- **XGBoost chosen as final model** — outperformed Random Forest after tuning; conservative settings (low learning rate, shallow trees) were key to handling noisy industrial data
+
+---
+
+## Limitations
+
+- The target variable is a lab measurement held constant between samples. 94.7% of hours show a single unchanging value, which fundamentally limits hourly prediction from process sensors
+- Process variables show weak direct correlation with iron grade on their own (max ~0.18)
+- The test period exhibits slight concept drift with the average grade being lower than in training
+
+---
+
+## What Comes Next
+
+- **Higher-frequency lab sampling** — the core bottleneck; finer-grained target measurements would expose the relationship between process inputs and output quality
+- **Predicting silica concentrate** as a complementary target — it shows slightly stronger temporal structure and is the plant's key quality indicator alongside iron grade
 
 ---
 
@@ -74,30 +107,15 @@ The model has access to all key controllable process variables — reagent dosag
 │   ├── y_train.csv
 │   └── y_test.csv
 ├── src/
-│   ├── preprocessing.py      # data cleaning and scaling utilities
-│   ├── features.py           # feature engineering (lag, rolling, time features)
-│   └── modeling.py           # evaluate_model, tune_model, compare_models,
-│                             # plot_predictions, feature_importance
-├── 01_eda.ipynb              # exploratory data analysis
+│   ├── preprocessing.py      # cleaning, date parsing, chronological split
+│   ├── features.py           # lag features, rolling windows, time features
+│   └── modelling.py          # compare_models, tune_model, feature_importance,
+│                             # plot_predictions
+├── 01_eda.ipynb              # exploratory data analysis on cleaned data
 ├── 02_feature_engineering.ipynb
 ├── 03_modelling.ipynb        # training, tuning, evaluation and comparison
 └── README.md
 ```
-
----
-
-## Key Decisions & Reasoning
-
-- **TimeSeriesSplit over random split** — prevents data leakage in time-ordered data
-- **7 folds** — tested 3, 5 and 7; 7 gave the most stable CV scores for this dataset size
-- **Silica concentrate kept as a feature** — tested with and without; improvement was modest (not the exponential jump characteristic of true leakage), confirming it provides genuine process signal
-- **XGBoost chosen as final model** — outperformed Random Forest after tuning; low learning rate and shallow trees were key to handling noisy industrial data
-
----
-
-## What Comes Next
-
-A natural extension of this work would be to shift the prediction window forward — predicting concentrate grade 3–6 hours ahead rather than current grade. This would give the technical team an explicit action window to adjust process variables before off-spec product is produced. The lag features already engineered provide a foundation for this.
 
 ---
 
@@ -109,4 +127,4 @@ Python, scikit-learn, XGBoost, pandas, matplotlib, Jupyter
 
 ## About
 
-This project was completed as the capstone machine learning project of the Ironhack Data Analytics bootcamp. The dataset is based on real flotation plant sensor data from a mining operation.
+This project was completed as the capstone machine learning project of the Ironhack Data Analytics bootcamp. The dataset is sourced from Kaggle (real flotation plant sensor data, 2017).
