@@ -54,12 +54,6 @@ Three models were compared as baselines, chosen to cover the full spectrum from 
 
 ## Results
 
-| Model | CV R² (mean) | CV R² (std) | Test R² | Test MAE |
-|---|---|---|---|---|
-| XGBoost (tuned) | 0.476 | — | 0.536 | 0.563 |
-| Random Forest (tuned) | 0.477 | 0.119 | 0.525 | 0.571 |
-| Decision Tree | 0.334 | 0.150 | 0.443 | 0.612 |
-
 **Best model: tuned XGBoost**
 - Predicts iron concentrate grade within **±0.56 percentage points** on average
 - CV and test scores are close, confirming the model generalises honestly to unseen time periods
