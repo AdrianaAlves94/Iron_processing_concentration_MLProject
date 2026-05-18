@@ -55,7 +55,7 @@ Three models were compared as baselines, chosen to cover the full spectrum from 
 ## Results
 
 **Best model: tuned XGBoost**
-- Predicts iron concentrate grade within **±0.56 percentage points** on average
+- Predicts iron concentrate grade within **±0.56 percentage points (MAE)** on average
 - CV and test scores are close, confirming the model generalises honestly to unseen time periods
 
 ### What the R² of 0.54 reflects
