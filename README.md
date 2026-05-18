@@ -30,15 +30,13 @@ This project asks: **can we predict iron concentrate grade, using sensor data th
 ## Methodology
 
 ### Time-Aware Validation
-Because this is time series data, standard random train/test splitting would allow the model to train on future observations to predict the past — a form of data leakage. All splits were done **chronologically**, and `TimeSeriesSplit` (7 folds) was used for cross-validation, ensuring the model is always trained on the past and evaluated on what comes after. This mirrors real operational conditions.
+Because this is time series data, standard random train/test splitting would allow the model to train on future observations to predict the past (a form of data leakage). All splits were done **chronologically**, and `TimeSeriesSplit` (7 folds) was used for cross-validation, ensuring the model is always trained on the past and evaluated on what comes after. This mirrors real operational conditions.
 
 ### Data Leakage Investigation
-An initial model including silica concentrate features produced a Test R² of 0.51. Feature importance analysis revealed that `pct_silica_concentrate_max` accounted for over 80% of the model's predictive weight. Since silica concentrate is measured on the same final product at the same time as iron concentrate, this constituted data leakage — the model was reading a complementary label rather than learning from process variables. All silica concentrate features were removed.
+An initial model including silica concentrate features produced a Test R² of 0.51. Feature importance analysis revealed that `pct_silica_concentrate_max` accounted for over 80% of the model's predictive weight. Since silica concentrate is measured on the same final product at the same time as iron concentrate, this constituted data leakage. All silica concentrate features were removed.
 
 ### Target Lag Feature
-After removing leakage, model performance dropped significantly. Investigation of the raw data revealed that iron concentrate is a lab measurement updated infrequently — 94.3% of rows are identical to the previous row, and 94.7% of hourly samples contain a single unchanging value. This finding is consistent with published research: Pu et al. (2020), using the same dataset, reported a Random Forest R² of 0.014 without temporal features, compared to 0.71 with an LSTM that captures temporal dependencies.
-
-The previous hour's iron concentrate grade was added as a feature — a legitimate input since operators always have access to the last lab result. This improved model performance substantially.
+After removing leakage, model performance dropped significantly. Investigation of the raw data revealed that iron concentrate is a lab measurement updated infrequently. The previous hour's iron concentrate grade was added as a feature. This is a legitimate input since operators always have access to the last lab result. This improved model performance substantially.
 
 ### Model Selection
 Three models were compared as baselines, chosen to cover the full spectrum from simple to complex:
@@ -50,7 +48,7 @@ Three models were compared as baselines, chosen to cover the full spectrum from 
 | XGBoost | Boosting — learns from mistakes iteratively |
 
 ### Hyperparameter Tuning
-`GridSearchCV` with `TimeSeriesSplit` was used to tune both Random Forest and XGBoost. XGBoost benefited most from tuning — a low learning rate (0.01), shallow trees (max_depth=3), and subsampling (0.8) prevented overfitting on noisy industrial data.
+`GridSearchCV` with `TimeSeriesSplit` was used to tune both Random Forest and XGBoost. XGBoost benefited most from tuning. Low learning rate (0.01), shallow trees (max_depth=3), and subsampling (0.8) prevented overfitting on noisy industrial data.
 
 ---
 
@@ -85,7 +83,7 @@ This is consistent with the structural limitation of the dataset: the target is 
 
 ## Limitations
 
-- The target variable is a lab measurement held constant between samples. 94.7% of hours show a single unchanging value, which fundamentally limits hourly prediction from process sensors
+- The target variable is a lab measurement held constant between samples. 
 - Process variables show weak direct correlation with iron grade on their own (max ~0.18)
 - The test period exhibits slight concept drift with the average grade being lower than in training
 
@@ -94,7 +92,7 @@ This is consistent with the structural limitation of the dataset: the target is 
 ## What Comes Next
 
 - **Higher-frequency lab sampling** — the core bottleneck; finer-grained target measurements would expose the relationship between process inputs and output quality
-- **Predicting silica concentrate** as a complementary target — it shows slightly stronger temporal structure and is the plant's key quality indicator alongside iron grade
+- **Predicting silica concentrate** as a complementary target which is the plant's key quality indicator alongside iron grade
 
 ---
 
